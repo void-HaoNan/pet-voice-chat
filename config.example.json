@@ -1,0 +1,39 @@
+{
+  "host": "127.0.0.1",
+  "port": 8898,
+  "asr": {
+    "vad_model": "models/silero_vad.onnx",
+    "model_dir": "models/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17",
+    "device": "",
+    "sample_rate": 16000,
+    "min_silence": 0.5,
+    "min_speech": 0.25,
+    "preroll_seconds": 0.4,
+    "merge_seconds": 0.8,
+    "language": "zh"
+  },
+  "tts": {
+    "base": "http://127.0.0.1:9880",
+    "ref_audio": "models/ref.wav",
+    "prompt_text": "参考音频里说的那句话",
+    "prompt_lang": "zh",
+    "text_lang": "zh",
+    "streaming": true,
+    "timeout": 60
+  },
+  "llm": {
+    "base": "https://api.deepseek.com/v1",
+    "key": "",
+    "model": "deepseek-chat",
+    "persona": "你是一只住在电脑里的桌宠，说话短、口语化、有主见，不客套。",
+    "history_turns": 8,
+    "max_tokens": 200,
+    "temperature": 0.8,
+    "fix_speech": true
+  },
+  "playback": {
+    "enabled": true,
+    "ffplay": "ffplay",
+    "volume": 60
+  }
+}
