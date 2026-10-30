@@ -4,3 +4,6 @@ models/
 __pycache__/
 *.pyc
 data/
+
+_run.out
+_run.err
