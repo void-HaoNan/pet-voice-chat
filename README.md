@@ -123,6 +123,22 @@ pvc/server.py   HTTP + WebSocket 接口
 pvc/config.py   配置读取
 ```
 
+
+## 升级与兼容
+
+这个项目会被别的程序（比如直播中台）调用，接口变动要可预期：
+
+1. `/health` 里带 `api_version`。接口有不兼容改动时把它加一，别偷改字段含义。
+2. 调用方启动或调用前先读 `api_version`，对不上就退回自己的实现，不要硬调。
+3. 项目自带接口契约测试，任何改动前后都跑一遍：
+
+```bash
+python tests/contract.py                # 默认连 127.0.0.1:8898
+python tests/contract.py http://127.0.0.1:8898
+```
+
+全部通过才算没破坏兼容；要加新能力就加新接口，旧的保留一个版本再删。
+
 ## 常见问题
 
 - 识别吞字：`asr.preroll_seconds` 调到 0.5，VAD 判定前的 0.4 秒会一起送进识别

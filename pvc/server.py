@@ -9,6 +9,7 @@ from aiohttp import web, WSMsgType
 
 from .asr import STATE as ASR_STATE
 from .tts import STATE as TTS_STATE
+from . import __version__
 
 START = time.time()
 
@@ -64,7 +65,8 @@ def build_app(hub: Hub) -> web.Application:
 
     async def health(request):
                 return web.json_response({
-            "ok": True, "listening": ASR_STATE.get("listening", False) and hub.listener.enabled["on"],
+            "ok": True, "api_version": "1", "service": "pet-voice-chat", "version": __version__,
+            "listening": ASR_STATE.get("listening", False) and hub.listener.enabled["on"],
             "speaking": TTS_STATE["speaking"],
             "model": "sense-voice", "uptime": round(time.time() - START, 1),
             "last_error": ASR_STATE.get("last_error", ""),
