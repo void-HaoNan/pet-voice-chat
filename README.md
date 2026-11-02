@@ -43,6 +43,8 @@ copy config.example.json config.json
 | `llm.base` / `llm.key` / `llm.model` | 任何 OpenAI 兼容接口 |
 | `llm.persona` | 人格设定 |
 | `playback.enabled` | 是否真的把声音放出来，测试时可关 |
+| `bubble.enabled` / `bubble.path` | 把回复写进桌宠气泡文件（一行一个 JSON，默认 `%APPDATA%/dsh-pet-bubble/say.txt`） |
+| `bubble.prio` | 气泡优先级，默认 6（对话级，不会被歌词/欢迎顶掉） |
 
 ## 运行
 
@@ -52,9 +54,29 @@ python -m pvc
 
 启动后会打印监听地址；麦克风说一句，终端和日志里就能看到识别结果和回复。
 
+## 自检（不出声、不依赖别的服务）
+
+```bash
+python tests/smoke.py
+```
+
+三块：拿一段真实人声跑 VAD + SenseVoice 识别、请求 `/say/stream` 只统计字节和首包时间、
+直接问模型一句。全部在本机完成，不播放任何声音，也不需要直播那套服务在跑。
+
 ## 接口规范
 
 所有接口都是本机回环，默认只监听 127.0.0.1。
+
+### POST /chat
+
+外部直接喂一句话，走和麦克风完全相同的链路（整理 → 回复 → 气泡 → 语音）。
+适合别的程序接入，也方便自检时不用对着麦克风说话。
+
+```json
+{"text": "在干嘛", "source": "api"}
+```
+
+返回 `{"ok": true, "text": "在干嘛。", "reply": "看你在打字。"}`。
 
 ### GET /health
 

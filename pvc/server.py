@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
+import os
 import time
 
 from aiohttp import web, WSMsgType
@@ -25,6 +27,8 @@ class Hub:
         self.clients: set[web.WebSocketResponse] = set()
         self.sse: set[web.StreamResponse] = set()
         self.state = {"last_text": "", "last_reply": ""}
+        # 一次只处理一句：用户连说两句时，第二句排队而不是两个回复同时生成、抢着播
+        self.reply_lock = asyncio.Lock()
 
     async def broadcast(self, event: dict) -> None:
         payload = json.dumps(event, ensure_ascii=False)
@@ -47,11 +51,38 @@ class Hub:
         self.speaker.stop()  # 用户开口，先停下自己
         await self.broadcast({"type": "transcript", "text": text, "source": source,
                               "ts": round(time.time(), 2)})
-        cleaned = await self._in_thread(self.chat.fix_speech, text)
-        reply = await self._in_thread(self.chat.reply, cleaned)
-        self.state.update({"last_text": cleaned, "last_reply": reply})
-        await self.broadcast({"type": "reply", "text": reply, "ts": round(time.time(), 2)})
-        self.speaker.say(reply)
+        async with self.reply_lock:
+            cleaned = await self._in_thread(self.chat.fix_speech, text)
+            reply = await self._in_thread(self.chat.reply, cleaned)
+            self.state.update({"last_text": cleaned, "last_reply": reply})
+            await self.broadcast({"type": "reply", "text": reply, "ts": round(time.time(), 2)})
+            self._write_bubble(reply)
+            self.speaker.say(reply)
+
+    def _write_bubble(self, text: str) -> None:
+        """写桌宠气泡：桌宠进程只认 say.txt 里一行一个 JSON。"""
+        cfg = self.cfg.get("bubble") or {}
+        if not cfg.get("enabled", True) or not text:
+            return
+        path = os.path.expandvars(str(cfg.get("path") or ""))
+        if not path:
+            return
+        line = json.dumps({"text": text[:120], "prio": int(cfg.get("prio", 6)),
+                           "ttl": int(cfg.get("ttl", 8000))}, ensure_ascii=False)
+        try:
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            # 上次写的时候可能没留换行，直接追加会和上一行粘成一条 JSON
+            needs_break = False
+            if os.path.isfile(path) and os.path.getsize(path) > 0:
+                with open(path, "rb") as handle:
+                    handle.seek(-1, os.SEEK_END)
+                    needs_break = handle.read(1) != b"\n"
+            with open(path, "a", encoding="utf-8") as handle:
+                if needs_break:
+                    handle.write("\n")
+                handle.write(line + "\n")
+        except OSError:
+            pass
 
     @staticmethod
     async def _in_thread(fn, *args):
@@ -98,6 +129,22 @@ def build_app(hub: Hub) -> web.Application:
         hub.speaker.say(text)
         return web.json_response({"ok": True, "queued": True})
 
+    async def chat(request):
+        """外部直接喂一句话：走识别之后同一条链路（整理 → 回复 → 气泡 → 语音）。
+
+        给桌宠/别的程序接的，也方便自检时不用对着麦克风说话。
+        """
+        try:
+            payload = await request.json()
+        except Exception:
+            payload = {}
+        text = str(payload.get("text") or "").strip()
+        if not text:
+            return web.json_response({"ok": False, "error": "text 不能为空"}, status=400)
+        await hub.handle_text(text, source=str(payload.get("source") or "api"))
+        return web.json_response({"ok": True, "text": hub.state["last_text"],
+                                  "reply": hub.state["last_reply"]})
+
     async def say_stream(request):
         try:
             payload = await request.json()
@@ -109,11 +156,23 @@ def build_app(hub: Hub) -> web.Application:
         response = web.StreamResponse(headers={"Content-Type": "application/octet-stream",
                                                "Cache-Control": "no-store"})
         await response.prepare(request)
+        # 2026-11-03：合成是同步网络读，原来直接在事件循环里 for，一句长语音就把整个服务堵住；
+        # 现在每取一块放到线程池，接口还能同时响应 /health 和 /listen。
+        loop = asyncio.get_running_loop()
+        source = hub.speaker.stream_pcm(text)
         try:
-            for chunk in hub.speaker.stream_pcm(text):
+            while True:
+                chunk = await loop.run_in_executor(None, lambda: next(source, None))
+                if not chunk:
+                    break
                 await response.write(chunk)
         except Exception:
             pass
+        finally:
+            try:
+                source.close()
+            except Exception:
+                pass
         await response.write_eof()
         return response
 
@@ -155,6 +214,7 @@ def build_app(hub: Hub) -> web.Application:
     app.router.add_get("/health", health)
     app.router.add_get("/state", state)
     app.router.add_post("/listen", listen)
+    app.router.add_post("/chat", chat)
     app.router.add_post("/say", say)
     app.router.add_post("/say/stream", say_stream)
     app.router.add_get("/events", events)

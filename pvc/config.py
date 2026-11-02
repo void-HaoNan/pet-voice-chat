@@ -47,6 +47,13 @@ DEFAULTS = {
         "ffplay": "ffplay",
         "volume": 60,
     },
+    # 桌宠气泡：把回复写进 say.txt，桌宠进程自己会弹出来（格式和直播那边一致）
+    "bubble": {
+        "enabled": True,
+        "path": "%APPDATA%/dsh-pet-bubble/say.txt",
+        "prio": 6,
+        "ttl": 8000,
+    },
 }
 
 ENV = {
